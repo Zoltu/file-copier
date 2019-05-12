@@ -1,0 +1,22 @@
+{
+	"name": "@zoltu/file-copier",
+	"version": "1.0.0",
+	"description": "Watches a directory and ensures all files matching a predicate function are mirrored to another directory (recursively), and deletes the files from the mirror when they are deleted from the source.",
+	"repository": {},
+	"license": "Unlicense",
+	"main": "output/index.js",
+	"devDependencies": {
+		"@types/node": "12.0.0",
+		"typescript": "3.4.5"
+	},
+	"scripts": {
+		"build": "tsc",
+		"prepublishOnly": "npm run build"
+	},
+	"files": [
+		"/output/",
+		"/source/",
+		"README.md",
+		"LICENSE"
+	]
+}
