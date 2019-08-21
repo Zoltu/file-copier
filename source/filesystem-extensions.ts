@@ -32,7 +32,7 @@ export async function getFileType(filePath: string): Promise<'file'|'directory'|
 	}
 }
 
-export async function recursiveDirectoryCopy(sourceDirectoryPath: string , destinationDirectoryPath: string, inclusionPredicate?: (absolutePath: string) => boolean) {
+export async function recursiveDirectoryCopy(sourceDirectoryPath: string , destinationDirectoryPath: string, inclusionPredicate: (absolutePath: string) => boolean, copyListener: (sourcePath: string, destinationPath: string) => Promise<void>) {
 	if (!path.isAbsolute(sourceDirectoryPath)) throw new Error(`Absolute source path required.  Provided: ${sourceDirectoryPath}`)
 	if (!path.isAbsolute(destinationDirectoryPath)) throw new Error(`Absolute destination path required.  Provided: ${destinationDirectoryPath}`)
 	sourceDirectoryPath = path.normalize(sourceDirectoryPath)
@@ -41,14 +41,15 @@ export async function recursiveDirectoryCopy(sourceDirectoryPath: string , desti
 	const fileNames = await filesystem.readdir(sourceDirectoryPath)
 	for (let fileName of fileNames) {
 		const sourceFilePath = path.join(sourceDirectoryPath, fileName)
-		if (inclusionPredicate && !inclusionPredicate(sourceFilePath)) continue
+		if (!(await inclusionPredicate(sourceFilePath))) continue
 		const destinationFilePath = path.join(destinationDirectoryPath, fileName)
 		switch (await getFileType(sourceFilePath)) {
 			case 'directory':
-				await recursiveDirectoryCopy(sourceFilePath, destinationFilePath)
+				await recursiveDirectoryCopy(sourceFilePath, destinationFilePath, inclusionPredicate, copyListener)
 				break
 			case 'file':
 				await filesystem.copyFile(sourceFilePath, destinationFilePath)
+				await copyListener(sourceFilePath, destinationFilePath)
 				break
 			case 'nonexistent':
 				break

@@ -10,10 +10,11 @@ export class FileCopier {
 	public constructor(
 		private readonly inputDirectoryPath: string,
 		private readonly outputDirectoryPath: string,
-		inclusionPredicate: (absolutePath: string) => boolean
+		private readonly inclusionPredicate: (absolutePath: string) => boolean = () => true,
+		private readonly copyListener: (sourcePath: string, destinationPath: string) => Promise<void> = async () => {},
 	) {
 		this.watcher = watch(this.inputDirectoryPath, { recursive: true, filter: inclusionPredicate }, this.onChangeDetected)
-		recursiveDirectoryCopy(this.inputDirectoryPath, this.outputDirectoryPath, inclusionPredicate).catch(error => {
+		recursiveDirectoryCopy(this.inputDirectoryPath, this.outputDirectoryPath, inclusionPredicate, copyListener).catch(error => {
 			console.error(error)
 			process.exit(1)
 		})
@@ -73,11 +74,14 @@ export class FileCopier {
 	}
 
 	private readonly onFileAddedOrUpdated = async (updatedInputFilePath: string) => {
-		await filesystem.copyFile(updatedInputFilePath, this.convertPathFromInputToOutput(updatedInputFilePath))
+		const sourcePath = updatedInputFilePath
+		const destinationPath = this.convertPathFromInputToOutput(updatedInputFilePath)
+		await filesystem.copyFile(sourcePath, destinationPath)
+		await this.copyListener(sourcePath, destinationPath)
 	}
 
 	private readonly onDirectoryAdded = async (newInputDirectoryPath: string) => {
-		await recursiveDirectoryCopy(newInputDirectoryPath, this.convertPathFromInputToOutput(newInputDirectoryPath))
+		await recursiveDirectoryCopy(newInputDirectoryPath, this.convertPathFromInputToOutput(newInputDirectoryPath), this.inclusionPredicate, this.copyListener)
 	}
 
 	private readonly onFileRemoved = async (oldOutputFilePath: string) => {
