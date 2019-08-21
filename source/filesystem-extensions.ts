@@ -32,7 +32,7 @@ export async function getFileType(filePath: string): Promise<'file'|'directory'|
 	}
 }
 
-export async function recursiveDirectoryCopy(sourceDirectoryPath: string , destinationDirectoryPath: string, inclusionPredicate: (absolutePath: string) => boolean, copyListener: (sourcePath: string, destinationPath: string) => Promise<void>) {
+export async function recursiveDirectoryCopy(sourceDirectoryPath: string , destinationDirectoryPath: string, inclusionPredicate: (absolutePath: string) => boolean = () => true, copyListener: (sourcePath: string, destinationPath: string) => Promise<void> = async () => {}) {
 	if (!path.isAbsolute(sourceDirectoryPath)) throw new Error(`Absolute source path required.  Provided: ${sourceDirectoryPath}`)
 	if (!path.isAbsolute(destinationDirectoryPath)) throw new Error(`Absolute destination path required.  Provided: ${destinationDirectoryPath}`)
 	sourceDirectoryPath = path.normalize(sourceDirectoryPath)
