@@ -4,10 +4,10 @@ Watches a directory and ensures all files matching a predicate function are mirr
 ## Usage
 ```typescript
 import { FileCopier } from '@zoltu/file-copier'
-import * as Path from 'path'
-const inputDirectoryPath = Path.join(__dirname, '..', 'source')
-const outputDirectoryPath = Path.join(__dirname, ',,', 'output')
-const filterFunction = (Path: string) => !Path.endsWith('.md')
+import * as path from 'path'
+const inputDirectoryPath = path.join(__dirname, 'source')
+const outputDirectoryPath = path.join(__dirname, 'output')
+const filterFunction = (filePath: string) => !filePath.endsWith('.md')
 
 new FileCopier(inputDirectoryPath, outputDirectoryPath, filterFunction)
 ```

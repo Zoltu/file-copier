@@ -1,8 +1,10 @@
 {
 	"name": "@zoltu/file-copier",
-	"version": "2.2.0",
+	"version": "2.2.1",
 	"description": "Watches a directory and ensures all files matching a predicate function are mirrored to another directory (recursively), and deletes the files from the mirror when they are deleted from the source.",
-	"repository": {},
+	"repository": {
+		"url": "https://github.com/Zoltu/file-copier"
+	},
 	"license": "Unlicense",
 	"main": "output/index.js",
 	"devDependencies": {
