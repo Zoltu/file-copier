@@ -1,94 +1,102 @@
 import { promises as filesystem } from 'fs'
 import * as path from 'path'
-import * as watch from './vendor/node-watch/watch'
-import { getFileType, recursiveDirectoryDelete, recursiveDirectoryCopy } from './filesystem-extensions'
-export { recursiveDirectoryCopy, recursiveDirectoryDelete }
-export { ensureDirectoryExists } from './filesystem-extensions'
 
-export class FileCopier {
-	private readonly watcher: watch.Watcher
-	public constructor(
-		private readonly inputDirectoryPath: string,
-		private readonly outputDirectoryPath: string,
-		private readonly inclusionPredicate: (absolutePath: string) => boolean = () => true,
-		private readonly copyListener: (sourcePath: string, destinationPath: string) => Promise<void> = async () => {},
-	) {
-		this.watcher = watch(this.inputDirectoryPath, { recursive: true, filter: inclusionPredicate }, this.onChangeDetected)
-		recursiveDirectoryCopy(this.inputDirectoryPath, this.outputDirectoryPath, inclusionPredicate, copyListener).catch(error => {
-			console.error(error)
-			process.exit(1)
-		})
+export type FileType = 'file' | 'directory' | 'nonexistent' | 'other'
+
+export async function ensureDirectoryExists(absoluteDirectoryPath: string) {
+	// !@#$ you nodejs and not providing any way to check for file existence without an exception
+	try {
+		await filesystem.mkdir(absoluteDirectoryPath, { recursive: true })
+	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST') return
+		throw error
 	}
+}
 
-	public readonly shutdown = () => { if (!this.watcher.isClosed()) this.watcher.close() }
-
-	public readonly convertPathFromInputToOutput = (pathToConvert: string) => {
-		const pathRelativeToInputDirectory = path.relative(this.inputDirectoryPath, pathToConvert)
-		return path.join(this.outputDirectoryPath, pathRelativeToInputDirectory)
+export async function fileExists(absoluteFilePath: string) {
+	// !@#$ you nodejs and not providing any way to check for file existence without an exception
+	try {
+		await filesystem.access(absoluteFilePath)
+		return true
+	} catch {
+		return false
 	}
+}
 
-	public readonly onChangeDetected = async (event: 'update'|'remove', filePath: string) => {
-		try {
-			if (event === 'update') {
-				switch (await getFileType(filePath)) {
-					case 'file':
-						await this.onFileAddedOrUpdated(filePath)
-						break
-					case 'directory':
-						await this.onDirectoryAdded(filePath)
-						break
-					case 'nonexistent':
-						console.log(`Saw ${filePath} change but it no longer exists.`)
-						break
-					case 'other':
-						console.log(`${filePath} is neither a file nor a directory, so it was not copied`)
-						break
-					default:
-						throw new Error('Unexpected file type.')
-				}
-			} else if (event === 'remove') {
-				const outputFilePath = this.convertPathFromInputToOutput(filePath)
-				switch (await getFileType(outputFilePath)) {
-					case 'file':
-						await this.onFileRemoved(outputFilePath)
-						break
-					case 'directory':
-						await this.onDirectoryRemoved(outputFilePath)
-						break
-					case 'nonexistent':
-						console.log(`Saw ${outputFilePath} change but it no longer exists.`)
-						break
-					case 'other':
-						console.log(`${outputFilePath} is neither a file nor a directory, so it was not deleted`)
-						break
-					default:
-						throw new Error('Unexpected file type.')
-				}
-			} else {
-				throw new Error(`Unexpected filesystem change event: ${event}`)
-			}
-		} catch (error) {
-			console.error(error)
-			process.exit(1)
+export async function getFileType(filePath: string): Promise<FileType> {
+	// !@#$ you nodejs and not providing any way to get file information without an exception
+	try {
+		const fileDetails = await filesystem.lstat(filePath)
+		if (fileDetails.isDirectory()) return 'directory'
+		else if (fileDetails.isFile()) return 'file'
+		else return 'other'
+	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') return 'nonexistent'
+		throw error
+	}
+}
+
+export async function recursiveDirectoryCopy(sourceDirectoryPath: string , destinationDirectoryPath: string, inclusionPredicate: (absolutePath: string, fileType: FileType) => Promise<boolean> = async () => true, copyListener: (sourcePath: string, destinationPath: string) => Promise<void> = async () => {}) {
+	if (!path.isAbsolute(sourceDirectoryPath)) throw new Error(`Absolute source path required.  Provided: ${sourceDirectoryPath}`)
+	if (!path.isAbsolute(destinationDirectoryPath)) throw new Error(`Absolute destination path required.  Provided: ${destinationDirectoryPath}`)
+	sourceDirectoryPath = path.normalize(sourceDirectoryPath)
+	destinationDirectoryPath = path.normalize(destinationDirectoryPath)
+	await ensureDirectoryExists(destinationDirectoryPath)
+	const fileNames = await filesystem.readdir(sourceDirectoryPath)
+	for (let fileName of fileNames) {
+		const sourceFilePath = path.join(sourceDirectoryPath, fileName)
+		const fileType = await getFileType(sourceFilePath)
+		if (!(await inclusionPredicate(sourceFilePath, fileType))) continue
+		const destinationFilePath = path.join(destinationDirectoryPath, fileName)
+		switch (fileType) {
+			case 'directory':
+				await recursiveDirectoryCopy(sourceFilePath, destinationFilePath, inclusionPredicate, copyListener)
+				break
+			case 'file':
+				await filesystem.copyFile(sourceFilePath, destinationFilePath)
+				await copyListener(sourceFilePath, destinationFilePath)
+				break
+			case 'nonexistent':
+				break
+			case 'other':
+				console.log(`${sourceFilePath} is neither a file nor a directory, so it was not copied`)
+				break
+			default:
+				throw new Error(`Missing case statement in switch block, see getFileType`)
 		}
 	}
+}
 
-	private readonly onFileAddedOrUpdated = async (updatedInputFilePath: string) => {
-		const sourcePath = updatedInputFilePath
-		const destinationPath = this.convertPathFromInputToOutput(updatedInputFilePath)
-		await filesystem.copyFile(sourcePath, destinationPath)
-		await this.copyListener(sourcePath, destinationPath)
-	}
-
-	private readonly onDirectoryAdded = async (newInputDirectoryPath: string) => {
-		await recursiveDirectoryCopy(newInputDirectoryPath, this.convertPathFromInputToOutput(newInputDirectoryPath), this.inclusionPredicate, this.copyListener)
-	}
-
-	private readonly onFileRemoved = async (oldOutputFilePath: string) => {
-		await filesystem.unlink(oldOutputFilePath)
-	}
-
-	private readonly onDirectoryRemoved = async (oldOutputDirectoryPath: string) => {
-		await recursiveDirectoryDelete(oldOutputDirectoryPath)
+export async function recursiveDirectoryDelete(directoryPath: string) {
+	if (!path.isAbsolute(directoryPath)) throw new Error(`Absolute directory path required.  Provided: ${directoryPath}`)
+	directoryPath = path.normalize(directoryPath)
+	try {
+		const fileNames = await filesystem.readdir(directoryPath)
+		for (let fileName of fileNames) {
+			const filePath = path.join(directoryPath, fileName)
+			switch (await getFileType(filePath)) {
+				case 'directory':
+					await recursiveDirectoryDelete(filePath)
+					break
+				case 'file':
+					try {
+						await filesystem.unlink(filePath)
+					} catch (error) {
+						if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') return
+						throw error
+					}
+					break
+				case 'nonexistent':
+					break
+				case 'other':
+					throw new Error(`${filePath} is neither a file nor a directory, don't know how to delete it.`)
+				default:
+				throw new Error(`Missing case statement in switch block, see getFileType`)
+			}
+		}
+		await filesystem.rmdir(directoryPath)
+	} catch (error) {
+		if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') return
+		throw error
 	}
 }
